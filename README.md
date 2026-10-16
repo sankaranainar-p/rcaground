@@ -80,11 +80,10 @@ tests/         unit, adapter-contract and fixture-based tests
 
 ## Provenance
 
-This package was extracted, with its git history, from the
-`ai-payment-reliability-engine` project in
-[ai-agentic-works](https://github.com/sankaranainar-p/ai-agentic-works).
-The application-specific parts of that project (triage classifier,
-remediation, API) remain there.
+This package was extracted from the author's AIOps research prototypes in
+[ai-agentic-works](https://github.com/sankaranainar-p/ai-agentic-works). The
+application-specific code (triage classifier, remediation, API) stays there;
+this repository holds only the domain-neutral evaluation core.
 
 ## Contributing and support
 
