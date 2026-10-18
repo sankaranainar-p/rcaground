@@ -16,6 +16,7 @@
 ## Git
 - Never rewrite git history, force-push, or squash merged work.
 - Never add `Co-Authored-By` or any AI attribution line to commits or pull requests.
+- Branch names follow <type>/<issue>-<short-topic>, where type is feat, fix, docs, test or chore (e.g. feat/3-openrca-system-arg). Never put dates, week numbers or plan references in branch names, commit messages, PR titles or code comments.
 
 ## Protected paths
 - Do not edit files under `docs/faithfulness*/` (committed study artefacts).
