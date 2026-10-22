@@ -7,6 +7,10 @@ uses [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- `OpenRCAAdapter(root, system="Bank")` with a per-system `LAYOUTS` table
+  (timezone and telemetry file layout). Only Bank is verified; other systems
+  raise `NotImplementedError` until verified against real files. Bank case IDs
+  are unchanged. `scripts/download_openrca.py` takes `--system`.
 - Initial extraction from `ai-agentic-works/ai-payment-reliability-engine`
   with git history preserved: RCAEval and OpenRCA adapters, evidence ranking,
   dependency graph builder, reference RCA generator, two-stage faithfulness
@@ -18,6 +22,8 @@ uses [Semantic Versioning](https://semver.org/).
   contribution guidelines, citation metadata and AI usage disclosure.
 
 ### Changed
+- `OpenRCABankAdapter` is now a deprecated alias for
+  `OpenRCAAdapter(root, system="Bank")` and emits `DeprecationWarning`.
 - Domain-specific service level indicator names replaced with generic ones.
 - `pytz` replaced with the standard library `zoneinfo`.
 

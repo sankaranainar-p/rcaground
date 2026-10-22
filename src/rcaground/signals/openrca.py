@@ -95,7 +95,9 @@ categorisation this project made, not something OpenRCA itself defines.
 from __future__ import annotations
 
 import math
+import warnings
 from bisect import bisect_left, bisect_right
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator, Optional
 
@@ -107,6 +109,43 @@ from rcaground.signals.log_template import extract_template
 from rcaground.signals.types import FailureCase, GroundTruth, LogEvent, MetricSeries, Span
 
 _SHANGHAI = ZoneInfo("Asia/Shanghai")
+
+
+@dataclass(frozen=True)
+class SystemLayout:
+    """Per-system facts verified against real OpenRCA files. Paths are
+    relative to a `telemetry/{date}/` folder; `None` means unverified."""
+
+    timezone: Optional[str] = None
+    metric_container: Optional[str] = None
+    metric_app: Optional[str] = None
+    log: Optional[str] = None
+    trace: Optional[str] = None
+
+    @property
+    def verified(self) -> bool:
+        return self.timezone is not None
+
+
+LAYOUTS: dict[str, SystemLayout] = {
+    "Bank": SystemLayout(
+        timezone="Asia/Shanghai",
+        metric_container="metric/metric_container.csv",
+        metric_app="metric/metric_app.csv",
+        log="log/log_service.csv",
+        trace="trace/trace_span.csv",
+    ),
+}
+
+
+def get_layout(system: str) -> SystemLayout:
+    layout = LAYOUTS.get(system, SystemLayout())
+    if not layout.verified:
+        raise NotImplementedError(
+            f"OpenRCA system {system!r} has no verified layout; add one to "
+            "rcaground.signals.openrca.LAYOUTS after checking real files"
+        )
+    return layout
 
 # OpenRCA record.csv `reason` -> this project's fault_class taxonomy
 # (rcaground/data/taxonomy.yaml). Best-effort categorisation: OpenRCA does not
@@ -137,23 +176,23 @@ def _clean(value):
     return value
 
 
-def _shanghai_date_folder(unix_seconds: float) -> str:
+def _date_folder(unix_seconds: float, tz=_SHANGHAI) -> str:
     """Return the `{YYYY_MM_DD}` telemetry folder name for a UTC unix
-    timestamp, converting to Asia/Shanghai first (see module docstring
-    for why this conversion is required, not optional).
+    timestamp, converting to the system timezone first (see module
+    docstring for why this conversion is required, not optional).
     """
-    dt = pd.Timestamp(unix_seconds, unit="s", tz="UTC").tz_convert(_SHANGHAI)
+    dt = pd.Timestamp(unix_seconds, unit="s", tz="UTC").tz_convert(tz)
     return dt.strftime("%Y_%m_%d")
 
 
-def evidence_window(record_timestamp: float) -> tuple[int, int]:
+def evidence_window(record_timestamp: float, tz=_SHANGHAI) -> tuple[int, int]:
     """Return (start, end) unix-second bounds of the 30-minute,
     minute-aligned Asia/Shanghai window containing *record_timestamp*,
     reproducing OpenRCA's own `main/generate.py::timestamp2timeperiod`
     exactly (verified against every query.csv instruction string, which
     states this same window in prose -- see module docstring).
     """
-    dt = pd.Timestamp(record_timestamp, unit="s", tz="UTC").tz_convert(_SHANGHAI)
+    dt = pd.Timestamp(record_timestamp, unit="s", tz="UTC").tz_convert(tz)
     start_minute = dt.minute - (dt.minute % 30)
     start = dt.replace(minute=start_minute, second=0, microsecond=0)
     end = start + pd.Timedelta(minutes=30)
@@ -406,13 +445,15 @@ def _build_topology(spans: list[Span]) -> nx.DiGraph:
     return graph
 
 
-class OpenRCABankAdapter:
-    """Yields (FailureCase, GroundTruth) pairs for OpenRCA's Bank system.
+class OpenRCAAdapter:
+    """Yields (FailureCase, GroundTruth) pairs for an OpenRCA system.
 
     Args:
-        root: directory containing `Bank/` (a directory with
+        root: directory containing `{system}/` (a directory with
               `record.csv`, `query.csv`, and `telemetry/`), i.e. either a
-              parent of `Bank/` or the `Bank/` directory itself.
+              parent of `{system}/` or the `{system}/` directory itself.
+        system: dataset system name. Only systems with a verified entry in
+              `LAYOUTS` load; others raise NotImplementedError.
 
     Each yielded FailureCase covers exactly the 30-minute evidence window
     OpenRCA's own query.csv instruction states for that failure (see
@@ -435,25 +476,27 @@ class OpenRCABankAdapter:
     how this is handled in the cross-adapter contract test.
     """
 
-    system = "openrca_bank"
-    dataset = "OpenRCA-Bank"
-
-    def __init__(self, root: str | Path) -> None:
+    def __init__(self, root: str | Path, system: str = "Bank") -> None:
         self.root = Path(root)
-        self.bank_dir = self._resolve_bank_dir()
-        self.record_csv = self.bank_dir / "record.csv"
-        self.query_csv = self.bank_dir / "query.csv"
-        self.telemetry_dir = self.bank_dir / "telemetry"
+        self.system_name = system
+        self.system = f"openrca_{system.lower()}"
+        self.dataset = f"OpenRCA-{system}"
+        self.system_dir = self._resolve_system_dir()
+        self.layout = get_layout(system)
+        self._tz = ZoneInfo(self.layout.timezone)
+        self.record_csv = self.system_dir / "record.csv"
+        self.query_csv = self.system_dir / "query.csv"
+        self.telemetry_dir = self.system_dir / "telemetry"
         if not self.record_csv.exists():
-            raise FileNotFoundError(f"no record.csv under {self.bank_dir}")
+            raise FileNotFoundError(f"no record.csv under {self.system_dir}")
 
-    def _resolve_bank_dir(self) -> Path:
-        candidate = self.root / "Bank"
+    def _resolve_system_dir(self) -> Path:
+        candidate = self.root / self.system_name
         if candidate.is_dir():
             return candidate
-        if self.root.name == "Bank" and self.root.is_dir():
+        if self.root.name == self.system_name and self.root.is_dir():
             return self.root
-        raise FileNotFoundError(f"Could not find a Bank/ directory under {self.root}")
+        raise FileNotFoundError(f"Could not find a {self.system_name}/ directory under {self.root}")
 
     def __iter__(self) -> Iterator[tuple[FailureCase, GroundTruth]]:
         record_df = pd.read_csv(self.record_csv)
@@ -465,21 +508,18 @@ class OpenRCABankAdapter:
         component = str(row["component"])
         reason = str(row["reason"]).strip()
 
-        case_id = f"OpenRCA-Bank_{idx}_{component}"
-        window_start, window_end = evidence_window(timestamp)
-        date_folder = _shanghai_date_folder(timestamp)
+        case_id = f"OpenRCA-{self.system_name}_{idx}_{component}"
+        window_start, window_end = evidence_window(timestamp, self._tz)
+        date_folder = _date_folder(timestamp, self._tz)
         date_dir = self.telemetry_dir / date_folder
 
-        metric_dir = date_dir / "metric"
-        log_dir = date_dir / "log"
-        trace_dir = date_dir / "trace"
-
+        lay = self.layout
         metrics: dict[str, MetricSeries] = {}
-        metrics.update(_load_metric_container(metric_dir / "metric_container.csv", window_start, window_end))
-        metrics.update(_load_metric_app(metric_dir / "metric_app.csv", window_start, window_end))
+        metrics.update(_load_metric_container(date_dir / lay.metric_container, window_start, window_end))
+        metrics.update(_load_metric_app(date_dir / lay.metric_app, window_start, window_end))
 
-        logs = _load_logs(log_dir / "log_service.csv", window_start, window_end)
-        traces = _load_traces(trace_dir / "trace_span.csv", window_start, window_end)
+        logs = _load_logs(date_dir / lay.log, window_start, window_end)
+        traces = _load_traces(date_dir / lay.trace, window_start, window_end)
         topology = _build_topology(traces)
 
         failure_case = FailureCase(
@@ -501,3 +541,15 @@ class OpenRCABankAdapter:
         )
 
         return failure_case, ground_truth
+
+
+class OpenRCABankAdapter(OpenRCAAdapter):
+    """Deprecated alias for `OpenRCAAdapter(root, system="Bank")`."""
+
+    def __init__(self, root: str | Path) -> None:
+        warnings.warn(
+            "OpenRCABankAdapter is deprecated; use OpenRCAAdapter(root, system='Bank')",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        super().__init__(root, "Bank")
