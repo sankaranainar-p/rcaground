@@ -26,7 +26,7 @@ from pathlib import Path
 import networkx as nx
 import pytest
 
-from rcaground.signals.openrca import OpenRCABankAdapter, evidence_window
+from rcaground.signals.openrca import OpenRCAAdapter, OpenRCABankAdapter, evidence_window
 from rcaground.signals.types import FailureCase, GroundTruth, LogEvent, MetricSeries, Span
 
 FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "openrca_bank"
@@ -242,3 +242,38 @@ def test_ground_truth_not_reachable_from_adapter_itself():
 def test_missing_bank_dir_raises_file_not_found(tmp_path):
     with pytest.raises(FileNotFoundError):
         OpenRCABankAdapter(tmp_path)
+
+
+# ---------------------------------------------------------------------------
+# System argument and deprecated alias
+# ---------------------------------------------------------------------------
+
+def test_system_argument_defaults_to_bank_and_matches_alias():
+    new = [fc.case_id for fc, _ in OpenRCAAdapter(FIXTURE_ROOT)]
+    explicit = [fc.case_id for fc, _ in OpenRCAAdapter(FIXTURE_ROOT, system="Bank")]
+    with pytest.warns(DeprecationWarning):
+        legacy = [fc.case_id for fc, _ in OpenRCABankAdapter(FIXTURE_ROOT)]
+    assert new == explicit == legacy
+
+
+def test_bank_case_ids_unchanged():
+    ids = [fc.case_id for fc, _ in OpenRCAAdapter(FIXTURE_ROOT, system="Bank")]
+    assert ids == ["OpenRCA-Bank_0_Mysql02", "OpenRCA-Bank_1_Redis02", "OpenRCA-Bank_2_Tomcat02"]
+
+
+def test_alias_emits_deprecation_warning():
+    with pytest.warns(DeprecationWarning, match="OpenRCAAdapter"):
+        OpenRCABankAdapter(FIXTURE_ROOT)
+
+
+def test_unverified_system_raises_clear_error(tmp_path):
+    system_dir = tmp_path / "Telecom"
+    system_dir.mkdir()
+    (system_dir / "record.csv").write_text("level,reason,component,timestamp,datetime\n")
+    with pytest.raises(NotImplementedError, match="Telecom.*no verified layout"):
+        OpenRCAAdapter(tmp_path, system="Telecom")
+
+
+def test_system_directory_must_exist(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        OpenRCAAdapter(tmp_path, system="Telecom")
