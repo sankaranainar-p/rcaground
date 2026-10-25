@@ -187,7 +187,8 @@ def _date_folder(unix_seconds: float, tz=_SHANGHAI) -> str:
 
 def evidence_window(record_timestamp: float, tz=_SHANGHAI) -> tuple[int, int]:
     """Return (start, end) unix-second bounds of the 30-minute,
-    minute-aligned Asia/Shanghai window containing *record_timestamp*,
+    minute-aligned window, in the system timezone *tz* (Asia/Shanghai
+    for Bank), containing *record_timestamp*,
     reproducing OpenRCA's own `main/generate.py::timestamp2timeperiod`
     exactly (verified against every query.csv instruction string, which
     states this same window in prose -- see module docstring).

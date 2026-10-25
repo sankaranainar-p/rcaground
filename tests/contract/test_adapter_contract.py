@@ -1,7 +1,7 @@
 """
 tests/contract/test_adapter_contract.py — Cross-adapter contract test.
 
-Every adapter under rcaground/signals/ (RCAEvalAdapter, OpenRCABankAdapter, and
+Every adapter under rcaground/signals/ (RCAEvalAdapter, OpenRCAAdapter, and
 any future benchmark adapter) must produce (FailureCase, GroundTruth)
 pairs satisfying the same structural contract, so classifiers/agents and
 the benchmark harness (rcaground/bench/run_benchmark.py) can treat every benchmark
@@ -41,7 +41,7 @@ import networkx as nx
 import pytest
 import yaml
 
-from rcaground.signals.openrca import OpenRCABankAdapter
+from rcaground.signals.openrca import OpenRCAAdapter
 from rcaground.signals.rcaeval import RCAEvalAdapter
 from rcaground.signals.types import FailureCase, GroundTruth, LogEvent, MetricSeries, Span
 
@@ -87,7 +87,7 @@ def _rcaeval_cases() -> list[tuple[FailureCase, GroundTruth]]:
 
 
 def _openrca_cases() -> list[tuple[FailureCase, GroundTruth]]:
-    return list(OpenRCABankAdapter(OPENRCA_FIXTURE_ROOT))
+    return list(OpenRCAAdapter(OPENRCA_FIXTURE_ROOT, system="Bank"))
 
 
 ADAPTER_CASES = {

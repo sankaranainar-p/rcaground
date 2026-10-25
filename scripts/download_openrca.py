@@ -16,7 +16,7 @@ Unlike download_rcaeval.py's Zenodo download (single checksummed archive
 per dataset), this script downloads only the specific per-date telemetry
 folders actually referenced by Bank/record.csv's timestamps — NOT the
 full ~26GB Bank/telemetry/ tree — since OpenRCAAdapter only ever
-reads the date folder matching each failure's Asia/Shanghai date. This
+reads the date folder matching each failure's local date. This
 keeps a full Bank download to ~5-6GB (Bank has 10 date folders; see
 --list-dates) instead of needing the full ~26GB tree, and a
 --dates-only subset makes even that avoidable when you only need a few
@@ -43,17 +43,25 @@ Usage:
     # or spot-checking a handful of cases)
     python scripts/download_openrca.py --dates 2021_03_04 2021_03_06
 
-    # another system; only systems with a verified layout in
-    # rcaground.signals.openrca.LAYOUTS are accepted (currently Bank)
+    # another system; telemetry download requires a verified layout in
+    # rcaground.signals.openrca.LAYOUTS (currently Bank); --metadata-only,
+    # --list-dates and --list-remote work for any system
     python scripts/download_openrca.py --system Bank
 
     # just print which dates record.csv references, without downloading
+    # telemetry; for a system without a verified layout this prints the raw
+    # UTC timestamps instead, since no timezone may be assumed
     python scripts/download_openrca.py --list-dates
+
+    # list the system's directory names and one sample date's files on the
+    # mirror (no telemetry downloaded), to verify a layout
+    python scripts/download_openrca.py --system Telecom --list-remote
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 from urllib.request import Request, urlopen
@@ -61,7 +69,7 @@ from urllib.request import Request, urlopen
 import pandas as pd
 from zoneinfo import ZoneInfo
 
-from rcaground.signals.openrca import get_layout
+from rcaground.signals.openrca import LAYOUTS, SystemLayout, get_layout
 
 HF_BASE = "https://huggingface.co/datasets/cdreetz/OpenRCA/resolve/main"
 
@@ -109,6 +117,50 @@ def _download(url: str, dest: Path, force: bool = False) -> None:
     print(f"[ok] {dest} ({total} bytes)")
 
 
+def utc_timestamps(record_csv: Path) -> list[str]:
+    """Return the sorted distinct record.csv failure timestamps as ISO UTC
+    strings, with no timezone conversion applied."""
+    record = pd.read_csv(record_csv)
+    stamps = {pd.Timestamp(float(ts), unit="s", tz="UTC").isoformat() for ts in record["timestamp"]}
+    return sorted(stamps)
+
+
+def _hf_tree(path: str, recursive: bool = False) -> list[dict]:
+    url = f"https://huggingface.co/api/datasets/cdreetz/OpenRCA/tree/main/{path}"
+    if recursive:
+        url += "?recursive=true"
+    with urlopen(Request(url)) as resp:
+        return json.load(resp)
+
+
+def list_remote(system: str, sample_date: str | None = None) -> None:
+    """Print the mirror's directory names under *system* and the files of one
+    sample telemetry date, without downloading any telemetry. A system whose
+    top level has no `telemetry/` directory is split into sub-environments;
+    each one is listed separately."""
+    top = _hf_tree(system)
+    names = sorted(e["path"].rsplit("/", 1)[-1] for e in top)
+    if "telemetry" in names:
+        roots = [system]
+    else:
+        print(f"{system}/: {names}")
+        roots = [e["path"] for e in sorted(top, key=lambda e: e["path"]) if e["type"] == "directory"]
+    for root in roots:
+        entries = _hf_tree(root)
+        print(f"{root}/: {sorted(e['path'].rsplit('/', 1)[-1] for e in entries)}")
+        dates = sorted(
+            e["path"].rsplit("/", 1)[-1] for e in _hf_tree(f"{root}/telemetry") if e["type"] == "directory"
+        )
+        print(f"{root}/telemetry/: {len(dates)} date(s): {dates}")
+        if not dates:
+            continue
+        date = sample_date or dates[0]
+        prefix = f"{root}/telemetry/{date}/"
+        for e in sorted(_hf_tree(f"{root}/telemetry/{date}", recursive=True), key=lambda e: e["path"]):
+            if e["type"] == "file":
+                print(f"  {e['path'][len(prefix):]} ({e.get('size', '?')} bytes)")
+
+
 def referenced_dates(record_csv: Path, timezone: str = "Asia/Shanghai") -> list[str]:
     """Return the sorted set of `{YYYY_MM_DD}` telemetry folder names
     record.csv's failures actually fall on, in the system's timezone
@@ -152,10 +204,21 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--metadata-only", action="store_true", help="download only record.csv/query.csv, no telemetry")
     parser.add_argument("--list-dates", action="store_true", help="print the dates record.csv references and exit")
+    parser.add_argument(
+        "--list-remote",
+        action="store_true",
+        help="list the system's directory names and one sample date's files on the mirror, then exit "
+        "(sample date: first of --dates, else the first remote date)",
+    )
     parser.add_argument("--force", action="store_true", help="re-download even if a same-size file already exists")
     args = parser.parse_args(argv)
 
-    layout = get_layout(args.system)
+    if args.list_remote:
+        list_remote(args.system, args.dates[0] if args.dates else None)
+        return 0
+
+    downloading = not (args.metadata_only or args.list_dates)
+    layout = get_layout(args.system) if downloading else LAYOUTS.get(args.system, SystemLayout())
     system_dir = (
         download_metadata(args.out_dir, args.system, force=args.force)
         if not args.list_dates
@@ -164,12 +227,16 @@ def main(argv: list[str] | None = None) -> int:
     if args.list_dates and not (system_dir / "record.csv").exists():
         system_dir = download_metadata(args.out_dir, args.system, force=args.force)
 
+    if not layout.verified:
+        stamps = utc_timestamps(system_dir / "record.csv")
+        print(f"layout for {args.system!r} is unverified; no timezone assumed. Raw UTC timestamps:")
+        print("\n".join(stamps))
+        return 0
+
     dates = referenced_dates(system_dir / "record.csv", layout.timezone)
     print(f"record.csv references {len(dates)} date(s): {dates}")
 
-    if args.list_dates:
-        return 0
-    if args.metadata_only:
+    if not downloading:
         return 0
 
     target_dates = args.dates if args.dates else dates
