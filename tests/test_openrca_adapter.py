@@ -33,7 +33,7 @@ FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "openrca_bank"
 
 
 def _load() -> list[tuple[FailureCase, GroundTruth]]:
-    return list(OpenRCABankAdapter(FIXTURE_ROOT))
+    return list(OpenRCAAdapter(FIXTURE_ROOT, system="Bank"))
 
 
 def test_fixture_yields_three_cases():
@@ -230,7 +230,7 @@ def test_ground_truth_not_reachable_from_failure_case():
 
 
 def test_ground_truth_not_reachable_from_adapter_itself():
-    adapter = OpenRCABankAdapter(FIXTURE_ROOT)
+    adapter = OpenRCAAdapter(FIXTURE_ROOT, system="Bank")
     list(adapter)
     assert not _reaches_groundtruth(adapter)
 
@@ -241,7 +241,7 @@ def test_ground_truth_not_reachable_from_adapter_itself():
 
 def test_missing_bank_dir_raises_file_not_found(tmp_path):
     with pytest.raises(FileNotFoundError):
-        OpenRCABankAdapter(tmp_path)
+        OpenRCAAdapter(tmp_path, system="Bank")
 
 
 # ---------------------------------------------------------------------------
