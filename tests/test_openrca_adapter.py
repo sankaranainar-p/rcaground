@@ -21,12 +21,13 @@ verification against real, un-truncated data.
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 import networkx as nx
 import pytest
 
-from rcaground.signals.openrca import OpenRCAAdapter, OpenRCABankAdapter, evidence_window
+from rcaground.signals.openrca import LAYOUTS, OpenRCAAdapter, OpenRCABankAdapter, evidence_window
 from rcaground.signals.types import FailureCase, GroundTruth, LogEvent, MetricSeries, Span
 
 FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "openrca_bank"
@@ -267,13 +268,57 @@ def test_alias_emits_deprecation_warning():
 
 
 def test_unverified_system_raises_clear_error(tmp_path):
-    system_dir = tmp_path / "Telecom"
+    system_dir = tmp_path / "Unlisted"
     system_dir.mkdir()
     (system_dir / "record.csv").write_text("level,reason,component,timestamp,datetime\n")
-    with pytest.raises(NotImplementedError, match="Telecom.*no verified layout"):
-        OpenRCAAdapter(tmp_path, system="Telecom")
+    with pytest.raises(NotImplementedError, match="Unlisted.*no verified layout"):
+        OpenRCAAdapter(tmp_path, system="Unlisted")
 
 
 def test_system_directory_must_exist(tmp_path):
     with pytest.raises(FileNotFoundError):
-        OpenRCAAdapter(tmp_path, system="Telecom")
+        OpenRCAAdapter(tmp_path, system="Unlisted")
+
+
+# ---------------------------------------------------------------------------
+# Bank's layout mapping reproduces the behaviour from before per-layout
+# column mappings existed
+# ---------------------------------------------------------------------------
+
+def test_bank_layout_columns_are_the_original_hard_coded_names():
+    lay = LAYOUTS["Bank"]
+    assert (lay.metric_time_unit, lay.container_time, lay.container_id, lay.container_kpi) == (
+        "s",
+        "timestamp",
+        "cmdb_id",
+        "kpi_name",
+    )
+    assert (lay.app_time, lay.app_id, lay.app_kpis) == ("timestamp", "tc", ("rr", "sr", "cnt", "mrt"))
+
+
+def _output_digest(cases) -> str:
+    parts = []
+    for fc, gt in cases:
+        parts.append(
+            (
+                fc.case_id,
+                fc.dataset,
+                fc.system,
+                sorted((k, s.times, s.values, s.is_forward_filled) for k, s in fc.metrics.items()),
+                [
+                    (e.time, e.service, e.message, e.template, e.template_hash, e.level, sorted(e.raw.items()))
+                    for e in fc.logs
+                ],
+                [repr(s) for s in fc.traces],
+                sorted(fc.topology.edges()),
+                sorted(fc.topology.nodes()),
+                repr(gt),
+            )
+        )
+    return hashlib.sha256(repr(parts).encode()).hexdigest()
+
+
+def test_bank_output_is_byte_identical_to_pre_mapping_adapter():
+    """Digest of every FailureCase and GroundTruth field for the Bank fixture,
+    computed with the adapter as it was before the column mappings were added."""
+    assert _output_digest(_load()) == "f5b8838df10b863ba494c1fcdc5ac6c832c3f85a8b936e2dceef7391a16d23ec"

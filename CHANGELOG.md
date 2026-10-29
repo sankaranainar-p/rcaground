@@ -11,6 +11,14 @@ uses [Semantic Versioning](https://semver.org/).
   (timezone and telemetry file layout). Only Bank is verified; other systems
   raise `NotImplementedError` until verified against real files. Bank case IDs
   are unchanged. `scripts/download_openrca.py` takes `--system`.
+- Telecom layout for the OpenRCA adapter (container and app metrics only; no
+  logs, spans or other metric files yet). `SystemLayout` now carries per-system
+  metric column names and time unit; Bank's output is unchanged and pinned by a
+  test. `CPU fault`, `network delay` and `network loss` map to the `cpu`,
+  `delay` and `loss` fault classes. The downloader skips layout paths a system
+  does not have.
+- Synthetic Telecom test fixture (`tests/fixtures/openrca_telecom_synthetic/`)
+  and an opt-in real-data test selected by `RCAGROUND_OPENRCA_ROOT`.
 - Initial extraction from `ai-agentic-works/ai-payment-reliability-engine`
   with git history preserved: RCAEval and OpenRCA adapters, evidence ranking,
   dependency graph builder, reference RCA generator, two-stage faithfulness

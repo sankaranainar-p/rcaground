@@ -44,7 +44,7 @@ Usage:
     python scripts/download_openrca.py --dates 2021_03_04 2021_03_06
 
     # another system; telemetry download requires a verified layout in
-    # rcaground.signals.openrca.LAYOUTS (currently Bank); --metadata-only,
+    # rcaground.signals.openrca.LAYOUTS (currently Bank and Telecom); --metadata-only,
     # --list-dates and --list-remote work for any system
     python scripts/download_openrca.py --system Bank
 
@@ -185,7 +185,7 @@ def download_metadata(out_dir: Path, system: str = "Bank", force: bool = False) 
 
 def download_telemetry_for_dates(system_dir: Path, dates: list[str], force: bool = False) -> None:
     layout = get_layout(system_dir.name)
-    files = [layout.log, layout.metric_app, layout.metric_container, layout.trace]
+    files = [p for p in (layout.log, layout.metric_app, layout.metric_container, layout.trace) if p]
     for date in dates:
         for rel_path in files:
             url = f"{HF_BASE}/{system_dir.name}/telemetry/{date}/{rel_path}"

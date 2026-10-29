@@ -114,13 +114,23 @@ _SHANGHAI = ZoneInfo("Asia/Shanghai")
 @dataclass(frozen=True)
 class SystemLayout:
     """Per-system facts verified against real OpenRCA files. Paths are
-    relative to a `telemetry/{date}/` folder; `None` means unverified."""
+    relative to a `telemetry/{date}/` folder; `None` means the system has no
+    such file or it is not yet supported (a missing log or trace path yields
+    no logs or spans). Column names default to Bank's; `metric_time_unit` is
+    the unit of the metric files' time columns ("s" or "ms")."""
 
     timezone: Optional[str] = None
     metric_container: Optional[str] = None
     metric_app: Optional[str] = None
     log: Optional[str] = None
     trace: Optional[str] = None
+    metric_time_unit: str = "s"
+    container_time: str = "timestamp"
+    container_id: str = "cmdb_id"
+    container_kpi: str = "kpi_name"
+    app_time: str = "timestamp"
+    app_id: str = "tc"
+    app_kpis: tuple[str, ...] = ("rr", "sr", "cnt", "mrt")
 
     @property
     def verified(self) -> bool:
@@ -134,6 +144,20 @@ LAYOUTS: dict[str, SystemLayout] = {
         metric_app="metric/metric_app.csv",
         log="log/log_service.csv",
         trace="trace/trace_span.csv",
+    ),
+    # Telecom: no log/ directory; trace and the middleware/node/service metric
+    # files exist on the mirror but are not loaded yet. Metric times are ms.
+    "Telecom": SystemLayout(
+        timezone="Asia/Shanghai",
+        metric_container="metric/metric_container.csv",
+        metric_app="metric/metric_app.csv",
+        metric_time_unit="ms",
+        container_time="timestamp",
+        container_id="cmdb_id",
+        container_kpi="name",
+        app_time="startTime",
+        app_id="serviceName",
+        app_kpis=("avg_time", "num", "succee_num", "succee_rate"),
     ),
 }
 
@@ -163,6 +187,9 @@ _REASON_TO_FAULT_CLASS = {
     "high disk space usage": "disk",
     "network latency": "delay",
     "network packet loss": "loss",
+    "cpu fault": "cpu",
+    "network delay": "delay",
+    "network loss": "loss",
 }
 
 
@@ -174,6 +201,14 @@ def _clean(value):
     if isinstance(value, str) and value == "":
         return None
     return value
+
+
+def _at(date_dir: Path, rel: Optional[str]) -> Optional[Path]:
+    return date_dir / rel if rel else None
+
+
+def _in_seconds(times: pd.Series, unit: str) -> pd.Series:
+    return times // 1000 if unit == "ms" else times
 
 
 def _date_folder(unix_seconds: float, tz=_SHANGHAI) -> str:
@@ -201,7 +236,7 @@ def evidence_window(record_timestamp: float, tz=_SHANGHAI) -> tuple[int, int]:
 
 
 def _load_metric_container(
-    metric_csv: Path, window_start: int, window_end: int
+    metric_csv: Optional[Path], window_start: int, window_end: int, layout: SystemLayout
 ) -> dict[str, MetricSeries]:
     """Load metric_container.csv rows within [window_start, window_end)
     into {component:kpi_name -> MetricSeries}, resampled up to 1s cadence
@@ -214,19 +249,20 @@ def _load_metric_container(
     pod-level component name matching record.csv's `component` column
     (verified: both use names like "Tomcat01", "MG02", "Redis02").
     """
-    if not metric_csv.exists():
+    if metric_csv is None or not metric_csv.exists():
         return {}
 
-    df = pd.read_csv(metric_csv, dtype={"cmdb_id": str, "kpi_name": str})
-    df = df[(df["timestamp"] >= window_start) & (df["timestamp"] < window_end)]
+    df = pd.read_csv(metric_csv, dtype={layout.container_id: str, layout.container_kpi: str})
+    df["_time"] = _in_seconds(df[layout.container_time], layout.metric_time_unit)
+    df = df[(df["_time"] >= window_start) & (df["_time"] < window_end)]
     if df.empty:
         return {}
 
     metrics: dict[str, MetricSeries] = {}
-    for (cmdb_id, kpi_name), group in df.groupby(["cmdb_id", "kpi_name"], sort=False):
+    for (cmdb_id, kpi_name), group in df.groupby([layout.container_id, layout.container_kpi], sort=False):
         key = f"{cmdb_id}:{kpi_name}"
-        group = group.sort_values("timestamp")
-        native_times = group["timestamp"].astype(int).tolist()
+        group = group.sort_values("_time")
+        native_times = group["_time"].astype(int).tolist()
         native_values = group["value"].astype(float).tolist()
         times, values, ffilled = _resample_to_1s(native_times, native_values, window_start, window_end)
         if not times:
@@ -237,7 +273,9 @@ def _load_metric_container(
     return metrics
 
 
-def _load_metric_app(metric_csv: Path, window_start: int, window_end: int) -> dict[str, MetricSeries]:
+def _load_metric_app(
+    metric_csv: Optional[Path], window_start: int, window_end: int, layout: SystemLayout
+) -> dict[str, MetricSeries]:
     """Load metric_app.csv (business KPIs, no per-component owner) within
     the window, resampled the same way as metric_container.
 
@@ -249,19 +287,20 @@ def _load_metric_app(metric_csv: Path, window_start: int, window_end: int) -> di
     RCAEval's "cluster" bucket for ownerless columns) rather than force-
     mapped onto a component that doesn't own them.
     """
-    if not metric_csv.exists():
+    if metric_csv is None or not metric_csv.exists():
         return {}
 
     df = pd.read_csv(metric_csv)
-    df = df[(df["timestamp"] >= window_start) & (df["timestamp"] < window_end)]
+    df["_time"] = _in_seconds(df[layout.app_time], layout.metric_time_unit)
+    df = df[(df["_time"] >= window_start) & (df["_time"] < window_end)]
     if df.empty:
         return {}
 
     metrics: dict[str, MetricSeries] = {}
-    for tc, group in df.groupby("tc", sort=False):
-        group = group.sort_values("timestamp")
-        native_times = group["timestamp"].astype(int).tolist()
-        for kpi in ("rr", "sr", "cnt", "mrt"):
+    for tc, group in df.groupby(layout.app_id, sort=False):
+        group = group.sort_values("_time")
+        native_times = group["_time"].astype(int).tolist()
+        for kpi in layout.app_kpis:
             key = f"app.{tc}:{kpi}"
             native_values = group[kpi].astype(float).tolist()
             times, values, ffilled = _resample_to_1s(native_times, native_values, window_start, window_end)
@@ -314,7 +353,7 @@ def _resample_to_1s(
     return times, values, ffilled
 
 
-def _load_logs(log_csv: Path, window_start: int, window_end: int) -> list[LogEvent]:
+def _load_logs(log_csv: Optional[Path], window_start: int, window_end: int) -> list[LogEvent]:
     """Load log_service.csv rows within [window_start, window_end).
 
     log_service.csv columns: log_id,timestamp,cmdb_id,log_name,value
@@ -324,7 +363,7 @@ def _load_logs(log_csv: Path, window_start: int, window_end: int) -> list[LogEve
     Already per-second native cadence -- no resampling needed, multiple
     events can and do share a second.
     """
-    if not log_csv.exists():
+    if log_csv is None or not log_csv.exists():
         return []
 
     # timestamp is the 2nd column; read only rows in range without loading
@@ -361,7 +400,7 @@ def _load_logs(log_csv: Path, window_start: int, window_end: int) -> list[LogEve
     return events
 
 
-def _load_traces(trace_csv: Path, window_start: int, window_end: int) -> list[Span]:
+def _load_traces(trace_csv: Optional[Path], window_start: int, window_end: int) -> list[Span]:
     """Load trace_span.csv rows within [window_start, window_end).
 
     trace_span.csv columns: timestamp,cmdb_id,parent_id,span_id,trace_id,
@@ -385,7 +424,7 @@ def _load_traces(trace_csv: Path, window_start: int, window_end: int) -> list[Sp
     adapter does not attempt to synthesise a deployment hierarchy for
     Bank spans, matching that documented limitation.
     """
-    if not trace_csv.exists():
+    if trace_csv is None or not trace_csv.exists():
         return []
 
     spans: list[Span] = []
@@ -516,11 +555,11 @@ class OpenRCAAdapter:
 
         lay = self.layout
         metrics: dict[str, MetricSeries] = {}
-        metrics.update(_load_metric_container(date_dir / lay.metric_container, window_start, window_end))
-        metrics.update(_load_metric_app(date_dir / lay.metric_app, window_start, window_end))
+        metrics.update(_load_metric_container(_at(date_dir, lay.metric_container), window_start, window_end, lay))
+        metrics.update(_load_metric_app(_at(date_dir, lay.metric_app), window_start, window_end, lay))
 
-        logs = _load_logs(date_dir / lay.log, window_start, window_end)
-        traces = _load_traces(date_dir / lay.trace, window_start, window_end)
+        logs = _load_logs(_at(date_dir, lay.log), window_start, window_end)
+        traces = _load_traces(_at(date_dir, lay.trace), window_start, window_end)
         topology = _build_topology(traces)
 
         failure_case = FailureCase(
