@@ -341,6 +341,79 @@ was pointed at that fresh download (independent of the fixture-building
 download above) and successfully loaded case 2 (Tomcat01, high memory
 usage, 2021-03-06 06:20:00) with 1721 metrics / 3782 logs / 51227 traces.
 
+# CONVERSION.md — OpenRCA Telecom layout (`LAYOUTS["Telecom"]`)
+
+Verified against the Hugging Face mirror `cdreetz/OpenRCA` (see the Bank
+section above for why that mirror). Scope of this layout: the container and
+app metric files only; `trace_span.csv` and the `metric_middleware`,
+`metric_node` and `metric_service` files exist on the mirror but are not
+loaded yet.
+
+## Directory layout
+
+`Telecom/` holds `record.csv` (51 rows), `query.csv` and `telemetry/` with
+15 date folders. Each date folder has `metric/` and `trace/` and **no
+`log/`**: `SystemLayout.log` is `None` and the adapter returns no logs for
+Telecom cases. A `None` trace path likewise yields no spans.
+
+| File | Columns | Time column |
+|---|---|---|
+| `record.csv` | `level,reason,component,timestamp,datetime` | `timestamp`: unix seconds |
+| `metric/metric_container.csv` | `itemid,name,bomc_id,timestamp,value,cmdb_id` | `timestamp`: unix **milliseconds** |
+| `metric/metric_app.csv` | `serviceName,startTime,avg_time,num,succee_num,succee_rate` | `startTime`: unix **milliseconds** |
+| `trace/trace_span.csv` (not loaded) | `callType,startTime,elapsedTime,success,traceId,id,pid,cmdb_id,dsName,serviceName` | `startTime`: unix milliseconds |
+
+`SystemLayout` carries the per-system column names and `metric_time_unit`;
+Bank's values are the defaults and are pinned by
+`tests/test_openrca_adapter.py::test_bank_output_is_byte_identical_to_pre_mapping_adapter`.
+Metric keys are `{cmdb_id}:{name}` for container metrics and
+`app.{serviceName}:{kpi}` for app metrics.
+
+## Timezone: same rule as Bank, UTC+8
+
+- `datetime` equals `timestamp` converted to Asia/Shanghai in 51 of 51 rows,
+  and equals the raw UTC value in 0 of 51.
+- Row 0 (`timestamp=1586534700`) is 2020-04-10 16:05 UTC, `datetime` is
+  `2020-04-11 00:05:00`, and its telemetry folder is `2020_04_11`. That
+  folder's `metric_app.csv` `startTime` values run from 1586534400000
+  (2020-04-10 16:00 UTC, 2020-04-11 00:00 Shanghai) to 1586556000000
+  (06:00 Shanghai): the folders are Shanghai calendar days.
+- All 51 rows have a different UTC date than Shanghai date, so a UTC-date
+  lookup would miss every folder (it would ask for `2020_04_10` and
+  `2020_05_21`, which do not exist). The Shanghai dates are 11 of the 15
+  folders; `2020_04_20` to `2020_04_23` are not referenced by any record.
+
+## Known limitations
+
+- `metric_app.csv` has one service (`osb_001`) and 20 of 381 rows in
+  `2020_04_11` repeat a `(serviceName, startTime)` pair with different
+  values. What the duplicates mean is not documented; the adapter keeps
+  whichever row sorts last, so treat those samples as ambiguous.
+- `metric_container.csv` has no duplicate samples and every timestamp is a
+  whole second, so the millisecond-to-second conversion is lossless.
+- `reason` values are mapped to fault classes in `_REASON_TO_FAULT_CLASS`
+  (`CPU fault` to `cpu`, `network delay` to `delay`, `network loss` to
+  `loss`); `db connection limit` and `db close` fall through to
+  `dependency_failure` like any unmapped reason.
+
+## Fixtures and the real-data test
+
+`tests/fixtures/openrca_telecom_synthetic/` is synthetic (real headers and
+formats, invented values; see `tests/fixtures/README.md`). To run the
+adapter against real Telecom data instead:
+
+```bash
+# fetch record.csv, query.csv and the container/app metric files for one
+# date (about 2 MB; the trace file is not requested)
+python scripts/download_openrca.py --system Telecom --out-dir data/openrca --dates 2020_04_11
+
+RCAGROUND_OPENRCA_ROOT=data/openrca pytest tests/test_openrca_real_data.py -v
+```
+
+Without `RCAGROUND_OPENRCA_ROOT` (or with no downloaded date folder) those
+tests skip. Redistribution terms for the OpenRCA telemetry are unconfirmed,
+so no real Telecom data is committed.
+
 # CONVERSION.md — Alert synthesiser (`rcaground/signals/alert_synth.py`, A5)
 
 ## 1. Metric-suffix vocabulary the rules in `rcaground/data/alert_rules.yaml` were derived from

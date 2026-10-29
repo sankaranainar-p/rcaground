@@ -42,8 +42,8 @@ def _write_record(out_dir: Path, system: str) -> None:
 
 
 def test_list_dates_unverified_system_prints_raw_utc_without_timezone(tmp_path, capsys, no_download):
-    _write_record(tmp_path, "Telecom")
-    assert downloader.main(["--out-dir", str(tmp_path), "--system", "Telecom", "--list-dates"]) == 0
+    _write_record(tmp_path, "Unlisted")
+    assert downloader.main(["--out-dir", str(tmp_path), "--system", "Unlisted", "--list-dates"]) == 0
     out = capsys.readouterr().out
     assert "unverified" in out
     assert "2020-04-11T23:30:00+00:00" in out
@@ -66,14 +66,14 @@ def test_metadata_only_unverified_system_downloads_only_metadata(tmp_path, monke
         dest.write_text(f"timestamp\n{LATE_UTC_TS}\n")
 
     monkeypatch.setattr(downloader, "_download", fake_download)
-    assert downloader.main(["--out-dir", str(tmp_path), "--system", "Telecom", "--metadata-only"]) == 0
+    assert downloader.main(["--out-dir", str(tmp_path), "--system", "Unlisted", "--metadata-only"]) == 0
     assert fetched == ["record.csv", "query.csv"]
     assert "unverified" in capsys.readouterr().out
 
 
 def test_telemetry_download_unverified_system_requires_layout(tmp_path, no_download):
     with pytest.raises(NotImplementedError, match="no verified layout"):
-        downloader.main(["--out-dir", str(tmp_path), "--system", "Telecom"])
+        downloader.main(["--out-dir", str(tmp_path), "--system", "Unlisted"])
 
 
 def _fake_tree(listing):
@@ -126,3 +126,14 @@ def test_list_remote_sub_environments(monkeypatch, capsys):
     assert "Market/cloudbed-1/: ['record.csv', 'telemetry']" in out
     assert "Market/cloudbed-2/telemetry/: 1 date(s)" in out
     assert out.count("metric/m.csv (7 bytes)") == 2
+
+
+def test_telemetry_download_skips_layout_paths_that_do_not_exist(tmp_path, monkeypatch):
+    fetched = []
+    monkeypatch.setattr(downloader, "_download", lambda url, dest, force=False: fetched.append(url))
+    system_dir = tmp_path / "Telecom"
+    downloader.download_telemetry_for_dates(system_dir, ["2020_04_11"])
+    assert sorted(u.split("2020_04_11/")[1] for u in fetched) == [
+        "metric/metric_app.csv",
+        "metric/metric_container.csv",
+    ]
