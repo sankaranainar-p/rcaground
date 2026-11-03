@@ -414,6 +414,111 @@ Without `RCAGROUND_OPENRCA_ROOT` (or with no downloaded date folder) those
 tests skip. Redistribution terms for the OpenRCA telemetry are unconfirmed,
 so no real Telecom data is committed.
 
+# CONVERSION.md — OpenRCA Market layouts (`LAYOUTS["Market.cloudbed-1"]`, `LAYOUTS["Market.cloudbed-2"]`)
+
+Verified against the Hugging Face mirror `cdreetz/OpenRCA` on 2026-11-03
+(`python scripts/download_openrca.py --system Market --list-remote`, plus the
+first bytes and the timestamp range of the files named below). Scope of these
+layouts: the container metric file and the service metric file (Market's
+analogue of Telecom's app file); logs, traces and the node, mesh and runtime
+metric files are not loaded yet (issue #21).
+
+## Directory layout
+
+Market is split into two sub-environments, each a complete system:
+
+```
+Market/cloudbed-1/{record.csv, query.csv, telemetry/{2022_03_20,2022_03_21}/}
+Market/cloudbed-2/{record.csv, query.csv, telemetry/{2022_03_20,2022_03_21}/}
+```
+
+Each date folder has the same eight files in both sub-environments:
+`log/log_proxy.csv`, `log/log_service.csv`, `metric/metric_container.csv`,
+`metric/metric_mesh.csv`, `metric/metric_node.csv`, `metric/metric_runtime.csv`,
+`metric/metric_service.csv`, `trace/trace_span.csv`. The sub-environments are
+named `Market.cloudbed-1` and `Market.cloudbed-2` in layout keys, case IDs
+(`OpenRCA-Market.cloudbed-1_3_node-1`), `FailureCase.dataset` and
+`FailureCase.system` (`openrca_market.cloudbed-1`); `Market/cloudbed-1` is
+accepted as input and rewritten. No ID contains a slash. The downloader maps
+`Market.cloudbed-1` to the mirror path `Market/cloudbed-1/` and to
+`<out-dir>/Market/cloudbed-1/`.
+
+| File | Columns | Time column |
+|---|---|---|
+| `record.csv` | `timestamp,level,component,reason,datetime` | `timestamp`: unix seconds |
+| `metric/metric_container.csv` | `timestamp,cmdb_id,kpi_name,value` | `timestamp`: unix **seconds** |
+| `metric/metric_service.csv` | `service,timestamp,rr,sr,mrt,count` | `timestamp`: unix **seconds** |
+| `metric/metric_node.csv`, `metric_mesh.csv`, `metric_runtime.csv` (not loaded) | `timestamp,cmdb_id,kpi_name,value` | unix seconds |
+| `log/log_service.csv`, `log/log_proxy.csv` (not loaded) | `log_id,timestamp,cmdb_id,log_name,value` | unix seconds |
+| `trace/trace_span.csv` (not loaded) | `timestamp,cmdb_id,span_id,trace_id,duration,type,status_code,operation_name,parent_span` | unix milliseconds |
+
+Headers were read from both sub-environments and both dates (container and
+service files) and are identical, as are the headers of the other files for
+the first date. Time columns are 10-digit values (seconds) in the metric
+files, 13-digit in the trace file. Metric keys are `{cmdb_id}:{kpi_name}` for
+container metrics (`cmdb_id` looks like `node-6.adservice2-0`) and
+`app.{service}:{kpi}` for service metrics (`service` looks like
+`adservice-grpc`; KPIs `rr`, `sr`, `mrt`, `count`).
+
+## Timezone: same rule as Bank and Telecom, UTC+8
+
+- `datetime` equals `timestamp` converted to Asia/Shanghai in 70 of 70 rows
+  (`cloudbed-1`) and 78 of 78 rows (`cloudbed-2`), and equals the raw UTC
+  value in none.
+- `metric_service.csv` timestamps run from 1647705600 (2022-03-19 16:00 UTC,
+  2022-03-20 00:00 Shanghai) to 1647791940 in `2022_03_20`, and from
+  1647792000 to 1647878340 in `2022_03_21`, in both sub-environments: the
+  folders are Shanghai calendar days.
+- Under the Shanghai date, `record.csv` rows fall on `2022_03_20` (33 and 32
+  rows) and `2022_03_21` (37 and 46 rows), the two folders that exist. Under
+  the UTC date, 47 and 48 rows would land on `2022_03_20` and 23 and 30 on
+  `2022_03_21`, so a UTC lookup would read the wrong day for every record
+  between 00:00 and 08:00 Shanghai time.
+
+## Differences between the sub-environments
+
+None in layout: same file names, headers, time units, timezone and date
+folders. Both entries in `LAYOUTS` therefore share one `SystemLayout`; give
+one its own entry if a difference is found. The contents differ (component
+names, instance suffixes such as `adservice2-0`, row counts, file sizes).
+
+## Known limitations
+
+- `record.csv` `level` is `pod`, `service` or `node`. Container `cmdb_id`
+  values carry a node prefix (`node-6.adservice2-0`) while a `pod` component
+  is the bare pod name (`shippingservice-1`) and a `service` component is a
+  bare service name, so evidence keys do not equal `root_cause_service`.
+  The adapter keeps both verbatim and does not map between them. About a
+  third of the rows are node-level and no loaded file is keyed by a node id;
+  node metrics need `metric_node.csv` (issue #21).
+- `reason` values are mapped to fault classes in `_REASON_TO_FAULT_CLASS`:
+  CPU load or spike to `cpu`, memory load or consumption to `memory`, disk
+  read, write and space reasons to `disk`, `container network latency` to
+  `delay`, `container packet loss` to `loss`. `container process
+  termination`, `container network packet corruption` and `container network
+  packet retransmission` fall through to `dependency_failure` like any
+  unmapped reason.
+- Two failures can share a 30-minute window (see `OpenRCAAdapter`).
+
+## Fixtures and the real-data test
+
+`tests/fixtures/openrca_market_synthetic/` is synthetic (real headers and
+formats, invented values; see `tests/fixtures/README.md`). To run the
+adapter against real Market data instead:
+
+```bash
+# record.csv, query.csv and the container and service metric files for one
+# date per sub-environment (the container file is about 270 MB per date)
+python scripts/download_openrca.py --system Market.cloudbed-1 --out-dir data/openrca --dates 2022_03_20
+python scripts/download_openrca.py --system Market.cloudbed-2 --out-dir data/openrca --dates 2022_03_20
+
+RCAGROUND_OPENRCA_ROOT=data/openrca pytest tests/test_openrca_real_data.py -v
+```
+
+Without `RCAGROUND_OPENRCA_ROOT` (or with no downloaded date folder) those
+tests skip. Redistribution terms for the OpenRCA telemetry are unconfirmed,
+so no real Market data is committed.
+
 # CONVERSION.md — Alert synthesiser (`rcaground/signals/alert_synth.py`, A5)
 
 ## 1. Metric-suffix vocabulary the rules in `rcaground/data/alert_rules.yaml` were derived from

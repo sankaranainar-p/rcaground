@@ -162,7 +162,36 @@ LAYOUTS: dict[str, SystemLayout] = {
 }
 
 
+_MARKET = SystemLayout(
+    timezone="Asia/Shanghai",
+    metric_container="metric/metric_container.csv",
+    metric_app="metric/metric_service.csv",
+    app_id="service",
+    app_kpis=("rr", "sr", "mrt", "count"),
+)
+
+# Market is split into two sub-environments, `Market/cloudbed-1/` and
+# `Market/cloudbed-2/`, each with its own record.csv and telemetry/. They were
+# found identical in layout; loading Market's logs, spans and its node, mesh
+# and runtime metric files is not done yet.
+LAYOUTS["Market.cloudbed-1"] = _MARKET
+LAYOUTS["Market.cloudbed-2"] = _MARKET
+
+
+def normalize_system(system: str) -> str:
+    """Sub-environments are named `Parent.child` in IDs and layout keys;
+    `Parent/child` is accepted as input and rewritten."""
+    return system.replace("/", ".")
+
+
+def system_path(system: str) -> Path:
+    """Directory of *system* relative to the OpenRCA root, e.g.
+    `Market/cloudbed-1` for `Market.cloudbed-1`."""
+    return Path(*normalize_system(system).split("."))
+
+
 def get_layout(system: str) -> SystemLayout:
+    system = normalize_system(system)
     layout = LAYOUTS.get(system, SystemLayout())
     if not layout.verified:
         raise NotImplementedError(
@@ -190,6 +219,18 @@ _REASON_TO_FAULT_CLASS = {
     "cpu fault": "cpu",
     "network delay": "delay",
     "network loss": "loss",
+    "container cpu load": "cpu",
+    "node cpu load": "cpu",
+    "node cpu spike": "cpu",
+    "container memory load": "memory",
+    "node memory consumption": "memory",
+    "container read i/o load": "disk",
+    "container write i/o load": "disk",
+    "node disk read i/o consumption": "disk",
+    "node disk write i/o consumption": "disk",
+    "node disk space consumption": "disk",
+    "container network latency": "delay",
+    "container packet loss": "loss",
 }
 
 
@@ -492,8 +533,10 @@ class OpenRCAAdapter:
         root: directory containing `{system}/` (a directory with
               `record.csv`, `query.csv`, and `telemetry/`), i.e. either a
               parent of `{system}/` or the `{system}/` directory itself.
-        system: dataset system name. Only systems with a verified entry in
-              `LAYOUTS` load; others raise NotImplementedError.
+        system: dataset system name; a sub-environment is `Market.cloudbed-1`
+              (`Market/cloudbed-1` is accepted and normalised). Only systems
+              with a verified entry in `LAYOUTS` load; others raise
+              NotImplementedError.
 
     Each yielded FailureCase covers exactly the 30-minute evidence window
     OpenRCA's own query.csv instruction states for that failure (see
@@ -517,6 +560,7 @@ class OpenRCAAdapter:
     """
 
     def __init__(self, root: str | Path, system: str = "Bank") -> None:
+        system = normalize_system(system)
         self.root = Path(root)
         self.system_name = system
         self.system = f"openrca_{system.lower()}"
@@ -531,10 +575,11 @@ class OpenRCAAdapter:
             raise FileNotFoundError(f"no record.csv under {self.system_dir}")
 
     def _resolve_system_dir(self) -> Path:
-        candidate = self.root / self.system_name
+        rel = system_path(self.system_name)
+        candidate = self.root / rel
         if candidate.is_dir():
             return candidate
-        if self.root.name == self.system_name and self.root.is_dir():
+        if self.root.parts[-len(rel.parts) :] == rel.parts and self.root.is_dir():
             return self.root
         raise FileNotFoundError(f"Could not find a {self.system_name}/ directory under {self.root}")
 

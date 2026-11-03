@@ -9,6 +9,7 @@ status of each:
 | `openrca/` | `agent-Bank.csv`, OpenRCA's archived agent output | Fetched from `rca/archive/agent-Bank.csv` in the OpenRCA GitHub repository (MIT), per `tests/test_b5_openrca_agent.py`; it differs from the file now upstream |
 | `openrca_bank/` | `Bank/` record.csv, query.csv and a narrow telemetry slice around three failures | **Trimmed real data** from the Hugging Face mirror <https://huggingface.co/datasets/cdreetz/OpenRCA>, **pending confirmation that redistribution is permitted** (see below) |
 | `openrca_telecom_synthetic/` | `Telecom/` record.csv and container/app metric files for one date | **Synthetic** |
+| `openrca_market_synthetic/` | `Market/cloudbed-1/` and `Market/cloudbed-2/` record.csv and container/service metric files for one date | **Synthetic** |
 
 ## OpenRCA licensing
 
@@ -43,3 +44,24 @@ Invented values in the real Telecom formats, not derived from OpenRCA data:
   rises at the failure time.
 - Identifiers are invented (`itemid` from 900000000000001, `bomc_id`
   `SYN-001`/`SYN-002`).
+
+## `openrca_market_synthetic/` (synthetic)
+
+Invented values in the real Market formats, not derived from OpenRCA data:
+
+- Real headers, column order, second timestamps and directory layout
+  (`Market/{cloudbed-1,cloudbed-2}/telemetry/2022_03_20/metric/`); only the
+  container and service metric files, no `log/` or `trace/`.
+- `record.csv` (three rows per sub-environment, one each of `pod`, `service`
+  or `node` level): failures on 2022-03-20 Shanghai time; the first of each
+  is before 08:00 Shanghai, so it falls on the previous UTC day. Reason names
+  reuse the real vocabulary.
+- `metric_container.csv`: two containers (`node-N.pod` ids) times two KPIs
+  (`container_cpu_usage_seconds`, `container_memory_rss`) at 60 s cadence over
+  each failure's 30-minute window, plus one sample just outside each end.
+  The container named by a `pod` record has its CPU jump to 90 in the last
+  minute.
+- `metric_service.csv`: two services per sub-environment (`rr`, `sr`, `mrt`,
+  `count`), same windows; the outside samples have `mrt` 99.
+- The two sub-environments use different component names so a test can tell
+  them apart.
