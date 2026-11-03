@@ -137,3 +137,18 @@ def test_telemetry_download_skips_layout_paths_that_do_not_exist(tmp_path, monke
         "metric/metric_app.csv",
         "metric/metric_container.csv",
     ]
+
+
+@pytest.mark.parametrize("system", ["Market.cloudbed-1", "Market/cloudbed-1"])
+def test_sub_environment_download_urls_and_paths(tmp_path, monkeypatch, system):
+    fetched = []
+    monkeypatch.setattr(downloader, "_download", lambda url, dest, force=False: fetched.append((url, dest)))
+    _write_record(tmp_path, "Market/cloudbed-1")
+    rc = downloader.main(["--system", system, "--out-dir", str(tmp_path), "--dates", "2022_03_20"])
+    system_dir = tmp_path / "Market" / "cloudbed-1"
+    base = f"{downloader.HF_BASE}/Market/cloudbed-1"
+    assert (f"{base}/record.csv", system_dir / "record.csv") in fetched
+    assert (f"{base}/telemetry/2022_03_20/metric/metric_service.csv",
+            system_dir / "telemetry/2022_03_20/metric/metric_service.csv") in fetched
+    assert not any("log/" in u or "trace/" in u for u, _ in fetched)
+    assert rc == 0

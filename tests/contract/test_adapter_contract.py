@@ -7,7 +7,8 @@ pairs satisfying the same structural contract, so classifiers/agents and
 the benchmark harness (rcaground/bench/run_benchmark.py) can treat every benchmark
 uniformly. This test runs the same assertions against both adapters'
 existing trimmed fixtures (tests/fixtures/rcaeval/, tests/fixtures/openrca_bank/)
-and the synthetic Telecom fixture (tests/fixtures/openrca_telecom_synthetic/)
+and the synthetic Telecom and Market fixtures (tests/fixtures/openrca_telecom_synthetic/,
+tests/fixtures/openrca_market_synthetic/)
 rather than introducing a third, adapter-agnostic fixture format, so it
 exercises each adapter's real, already-verified code path.
 
@@ -50,6 +51,7 @@ REPO_ROOT = Path(__file__).parent.parent.parent
 RCAEVAL_FIXTURE_ROOT = REPO_ROOT / "tests" / "fixtures" / "rcaeval"
 OPENRCA_FIXTURE_ROOT = REPO_ROOT / "tests" / "fixtures" / "openrca_bank"
 OPENRCA_TELECOM_FIXTURE_ROOT = REPO_ROOT / "tests" / "fixtures" / "openrca_telecom_synthetic"
+OPENRCA_MARKET_FIXTURE_ROOT = REPO_ROOT / "tests" / "fixtures" / "openrca_market_synthetic"
 
 with open(REPO_ROOT / "src" / "rcaground" / "data" / "taxonomy.yaml") as f:
     _TAXONOMY = yaml.safe_load(f)
@@ -96,10 +98,16 @@ def _openrca_telecom_cases() -> list[tuple[FailureCase, GroundTruth]]:
     return list(OpenRCAAdapter(OPENRCA_TELECOM_FIXTURE_ROOT, system="Telecom"))
 
 
+def _openrca_market_cases(env: str):
+    return lambda: list(OpenRCAAdapter(OPENRCA_MARKET_FIXTURE_ROOT, system=f"Market.{env}"))
+
+
 ADAPTER_CASES = {
     "rcaeval": _rcaeval_cases,
     "openrca_bank": _openrca_cases,
     "openrca_telecom_synthetic": _openrca_telecom_cases,
+    "openrca_market_cloudbed_1_synthetic": _openrca_market_cases("cloudbed-1"),
+    "openrca_market_cloudbed_2_synthetic": _openrca_market_cases("cloudbed-2"),
 }
 
 

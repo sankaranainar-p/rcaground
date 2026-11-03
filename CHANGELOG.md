@@ -17,6 +17,14 @@ uses [Semantic Versioning](https://semver.org/).
   test. `CPU fault`, `network delay` and `network loss` map to the `cpu`,
   `delay` and `loss` fault classes. The downloader skips layout paths a system
   does not have.
+- Market layouts for the OpenRCA adapter: `Market.cloudbed-1` and
+  `Market.cloudbed-2` (`Market/cloudbed-1` is accepted and normalised), loading
+  container and service metrics only. IDs contain no slash (case ID
+  `OpenRCA-Market.cloudbed-1_3_node-1`, system `openrca_market.cloudbed-1`).
+  Market's CPU, memory, disk, latency and packet-loss `reason` values map to
+  the `cpu`, `memory`, `disk`, `delay` and `loss` fault classes. The
+  downloader accepts both spellings. Logs, traces and the other metric files
+  are tracked in #21.
 - Synthetic Telecom test fixture (`tests/fixtures/openrca_telecom_synthetic/`)
   and an opt-in real-data test selected by `RCAGROUND_OPENRCA_ROOT`.
 - Initial extraction from `ai-agentic-works/ai-payment-reliability-engine`

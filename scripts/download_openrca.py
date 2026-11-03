@@ -44,7 +44,8 @@ Usage:
     python scripts/download_openrca.py --dates 2021_03_04 2021_03_06
 
     # another system; telemetry download requires a verified layout in
-    # rcaground.signals.openrca.LAYOUTS (currently Bank and Telecom); --metadata-only,
+    # rcaground.signals.openrca.LAYOUTS (currently Bank, Telecom and
+    # Market.cloudbed-1 / Market.cloudbed-2; "Market/cloudbed-1" is accepted); --metadata-only,
     # --list-dates and --list-remote work for any system
     python scripts/download_openrca.py --system Bank
 
@@ -69,7 +70,7 @@ from urllib.request import Request, urlopen
 import pandas as pd
 from zoneinfo import ZoneInfo
 
-from rcaground.signals.openrca import LAYOUTS, SystemLayout, get_layout
+from rcaground.signals.openrca import LAYOUTS, SystemLayout, get_layout, normalize_system, system_path
 
 HF_BASE = "https://huggingface.co/datasets/cdreetz/OpenRCA/resolve/main"
 
@@ -138,6 +139,7 @@ def list_remote(system: str, sample_date: str | None = None) -> None:
     sample telemetry date, without downloading any telemetry. A system whose
     top level has no `telemetry/` directory is split into sub-environments;
     each one is listed separately."""
+    system = system_path(system).as_posix()
     top = _hf_tree(system)
     names = sorted(e["path"].rsplit("/", 1)[-1] for e in top)
     if "telemetry" in names:
@@ -177,18 +179,23 @@ def referenced_dates(record_csv: Path, timezone: str = "Asia/Shanghai") -> list[
 
 
 def download_metadata(out_dir: Path, system: str = "Bank", force: bool = False) -> Path:
-    system_dir = out_dir / system
-    _download(f"{HF_BASE}/{system}/record.csv", system_dir / "record.csv", force=force)
-    _download(f"{HF_BASE}/{system}/query.csv", system_dir / "query.csv", force=force)
+    rel = system_path(system)
+    system_dir = out_dir / rel
+    _download(f"{HF_BASE}/{rel.as_posix()}/record.csv", system_dir / "record.csv", force=force)
+    _download(f"{HF_BASE}/{rel.as_posix()}/query.csv", system_dir / "query.csv", force=force)
     return system_dir
 
 
-def download_telemetry_for_dates(system_dir: Path, dates: list[str], force: bool = False) -> None:
-    layout = get_layout(system_dir.name)
+def download_telemetry_for_dates(
+    system_dir: Path, dates: list[str], force: bool = False, system: str | None = None
+) -> None:
+    system = system or system_dir.name
+    layout = get_layout(system)
+    rel = system_path(system).as_posix()
     files = [p for p in (layout.log, layout.metric_app, layout.metric_container, layout.trace) if p]
     for date in dates:
         for rel_path in files:
-            url = f"{HF_BASE}/{system_dir.name}/telemetry/{date}/{rel_path}"
+            url = f"{HF_BASE}/{rel}/telemetry/{date}/{rel_path}"
             dest = system_dir / "telemetry" / date / rel_path
             _download(url, dest, force=force)
 
@@ -212,6 +219,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--force", action="store_true", help="re-download even if a same-size file already exists")
     args = parser.parse_args(argv)
+    args.system = normalize_system(args.system)
 
     if args.list_remote:
         list_remote(args.system, args.dates[0] if args.dates else None)
@@ -222,7 +230,7 @@ def main(argv: list[str] | None = None) -> int:
     system_dir = (
         download_metadata(args.out_dir, args.system, force=args.force)
         if not args.list_dates
-        else args.out_dir / args.system
+        else args.out_dir / system_path(args.system)
     )
     if args.list_dates and not (system_dir / "record.csv").exists():
         system_dir = download_metadata(args.out_dir, args.system, force=args.force)
@@ -244,7 +252,7 @@ def main(argv: list[str] | None = None) -> int:
     if unknown:
         print(f"[warn] requested dates not referenced by record.csv: {sorted(unknown)}")
 
-    download_telemetry_for_dates(system_dir, target_dates, force=args.force)
+    download_telemetry_for_dates(system_dir, target_dates, force=args.force, system=args.system)
     return 0
 
 
