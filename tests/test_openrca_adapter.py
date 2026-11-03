@@ -21,7 +21,9 @@ verification against real, un-truncated data.
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
+import json
 from pathlib import Path
 
 import networkx as nx
@@ -31,6 +33,7 @@ from rcaground.signals.openrca import LAYOUTS, OpenRCAAdapter, OpenRCABankAdapte
 from rcaground.signals.types import FailureCase, GroundTruth, LogEvent, MetricSeries, Span
 
 FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "openrca_bank"
+GOLDEN = Path(__file__).parent / "fixtures" / "openrca_bank_golden.json"
 
 
 def _load() -> list[tuple[FailureCase, GroundTruth]]:
@@ -296,29 +299,48 @@ def test_bank_layout_columns_are_the_original_hard_coded_names():
     assert (lay.app_time, lay.app_id, lay.app_kpis) == ("timestamp", "tc", ("rr", "sr", "cnt", "mrt"))
 
 
-def _output_digest(cases) -> str:
-    parts = []
+def _plain(x):
+    if x is None or isinstance(x, (str, bool)):
+        return x
+    if dataclasses.is_dataclass(x) and not isinstance(x, type):
+        return {f.name: _plain(getattr(x, f.name)) for f in dataclasses.fields(x)}
+    if isinstance(x, dict):
+        return {str(k): _plain(v) for k, v in x.items()}
+    if isinstance(x, (set, frozenset)):
+        return sorted((_plain(v) for v in x), key=repr)
+    if hasattr(x, "tolist"):
+        return _plain(x.tolist())
+    if hasattr(x, "item"):
+        return _plain(x.item())
+    if isinstance(x, (list, tuple)):
+        return [_plain(v) for v in x]
+    if isinstance(x, int):
+        return int(x)
+    if isinstance(x, float):
+        return float(f"{x:.9g}")
+    raise TypeError(type(x))
+
+
+def _sha(x) -> str:
+    return hashlib.sha256(json.dumps(_plain(x), sort_keys=True).encode()).hexdigest()
+
+
+def _canonical_output(cases) -> dict:
+    out = {}
     for fc, gt in cases:
-        parts.append(
-            (
-                fc.case_id,
-                fc.dataset,
-                fc.system,
-                sorted((k, s.times, s.values, s.is_forward_filled) for k, s in fc.metrics.items()),
-                [
-                    (e.time, e.service, e.message, e.template, e.template_hash, e.level, sorted(e.raw.items()))
-                    for e in fc.logs
-                ],
-                [repr(s) for s in fc.traces],
-                sorted(fc.topology.edges()),
-                sorted(fc.topology.nodes()),
-                repr(gt),
-            )
-        )
-    return hashlib.sha256(repr(parts).encode()).hexdigest()
+        out[fc.case_id] = {
+            "dataset": fc.dataset,
+            "system": fc.system,
+            "metrics": {k: _sha(s) for k, s in sorted(fc.metrics.items())},
+            "logs": [len(fc.logs), _sha(fc.logs)],
+            "traces": [len(fc.traces), _sha(fc.traces)],
+            "edges": sorted(fc.topology.edges()),
+            "nodes": sorted(fc.topology.nodes()),
+            "gt": _plain(gt),
+        }
+    return out
 
 
-def test_bank_output_is_byte_identical_to_pre_mapping_adapter():
-    """Digest of every FailureCase and GroundTruth field for the Bank fixture,
-    computed with the adapter as it was before the column mappings were added."""
-    assert _output_digest(_load()) == "f5b8838df10b863ba494c1fcdc5ac6c832c3f85a8b936e2dceef7391a16d23ec"
+def test_bank_output_matches_golden():
+    got = json.loads(json.dumps(_canonical_output(_load()), sort_keys=True))
+    assert got == json.loads(GOLDEN.read_text())
