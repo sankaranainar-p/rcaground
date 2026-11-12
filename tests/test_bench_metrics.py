@@ -10,6 +10,8 @@ import math
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
+from hypothesis import given
+from hypothesis import strategies as st
 
 from rcaground.bench.metrics import (
     accuracy_at_k,
@@ -151,6 +153,81 @@ def test_accuracy_at_k_invalid_k_raises():
 def test_accuracy_at_k_empty_raises():
     with pytest.raises(ValueError):
         accuracy_at_k([], k=1)
+
+
+# ---------------------------------------------------------------------------
+# mean_reciprocal_rank / lift_at_k
+# ---------------------------------------------------------------------------
+
+_RANKED = [
+    (["a", "b", "c"], "a"),  # rank 1
+    (["b", "c", "a"], "a"),  # rank 3
+    (["b", "c", "d"], "a"),  # absent
+]
+
+
+def test_mrr_hand_computed():
+    assert mean_reciprocal_rank(_RANKED) == pytest.approx((1 + 1 / 3 + 0) / 3)
+
+
+def test_mrr_no_correct_prediction_is_zero():
+    assert mean_reciprocal_rank([(["b"], "a"), ([], "a")]) == 0.0
+
+
+def test_mrr_duplicate_in_ranks_uses_first_position():
+    assert mean_reciprocal_rank([(["b", "a", "a"], "a")]) == pytest.approx(0.5)
+
+
+def test_mrr_empty_raises():
+    with pytest.raises(ValueError):
+        mean_reciprocal_rank([])
+
+
+def test_lift_hand_computed():
+    # AC@2 = 1/3; chance = (min(2,4)/4 + min(2,10)/10 + min(2,2)/2) / 3 = 1.7 / 3
+    assert lift_at_k(_RANKED, k=2, n_candidates=[4, 10, 2]) == pytest.approx(1 / 1.7)
+
+
+def test_lift_ratio_of_means_differs_from_mean_of_ratios():
+    cases = [(["a"], "a"), (["z"], "a")]  # AC@1 = 1/2
+    n = [1, 100]  # chance = (1 + 1/100) / 2
+    ratio_of_means = lift_at_k(cases, k=1, n_candidates=n)
+    mean_of_ratios = (1 / 1 + 0 / 0.01) / 2
+    assert ratio_of_means == pytest.approx(0.5 / 0.505)
+    assert ratio_of_means != pytest.approx(mean_of_ratios)
+
+
+def test_lift_no_correct_prediction_is_zero():
+    assert lift_at_k([(["b"], "a"), (["c"], "a")], k=5, n_candidates=[10, 10]) == 0.0
+
+
+def test_lift_n_smaller_than_k_has_chance_one():
+    cases = [(["a", "b", "c"], "a"), (["b", "c", "d"], "a")]
+    assert lift_at_k(cases, k=5, n_candidates=[3, 3]) == pytest.approx(accuracy_at_k(cases, 5))
+
+
+def test_lift_length_mismatch_raises():
+    with pytest.raises(ValueError):
+        lift_at_k(_RANKED, k=2, n_candidates=[4, 10])
+
+
+def test_lift_n_below_one_raises():
+    with pytest.raises(ValueError):
+        lift_at_k(_RANKED, k=2, n_candidates=[4, 0, 2])
+
+
+_case = st.tuples(st.lists(st.sampled_from("abcdef"), unique=True, max_size=6), st.sampled_from("abcdef"))
+
+
+@given(st.lists(_case, min_size=1, max_size=8))
+def test_ac_at_k_is_non_decreasing_in_k(cases):
+    values = [accuracy_at_k(cases, k) for k in range(1, 8)]
+    assert values == sorted(values)
+
+
+@given(st.lists(_case, min_size=1, max_size=8))
+def test_mrr_lies_in_unit_interval(cases):
+    assert 0.0 <= mean_reciprocal_rank(cases) <= 1.0
 
 
 # ---------------------------------------------------------------------------
