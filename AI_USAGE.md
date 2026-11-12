@@ -9,6 +9,7 @@ updated as the project evolves and summarised in the paper's
 |---|---|---|
 | Claude (Anthropic), model `claude-opus-5-5` | Repository extraction and setup, October 2026 | Extracting the package from the upstream repository with history; renaming the package and domain-neutral terminology; packaging, CI, README, contribution and citation files; porting the evaluation protocol |
 | Claude (Anthropic), model `claude-sonnet-5-5` | `src/rcaground/signals/openrca.py`, `scripts/download_openrca.py`, October 2026 | Refactoring the OpenRCA adapter and downloader to take a system argument; writing the accompanying tests |
+| Claude (Anthropic), model `claude-sonnet-5-5` | `src/rcaground/bench/metrics.py`, `src/rcaground/bench/run_benchmark.py`, November 2026 | Implementing the MRR and Lift@k metrics and their benchmark CSV columns; writing the tests and protocol text |
 | TODO: list the tools used during upstream development (for example Claude Code, Gemini), with versions | Source code, tests, documentation | TODO: describe (code generation, refactoring, test scaffolding, review) |
 
 ## Human review

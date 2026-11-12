@@ -41,12 +41,20 @@ from typing import Any
 import yaml
 
 from rcaground.bench.baselines import BASELINE_IDS
-from rcaground.bench.metrics import average_at_k
+from rcaground.bench.metrics import average_at_k, lift_at_k, mean_reciprocal_rank
 from rcaground.signals.types import FailureCase, GroundTruth
 
 _ADAPTERS = {
     "rcaeval": "rcaground.signals.rcaeval.RCAEvalAdapter",
 }
+
+
+def _n_candidates(case: FailureCase) -> int:
+    services = {key.split(":", 1)[0] for key in case.metrics}
+    services.update(event.service for event in case.logs)
+    services.update(span.service for span in case.traces)
+    services.update(case.topology.nodes)
+    return len(services)
 
 
 def _load_adapter(adapter_config: dict[str, Any]):
@@ -104,7 +112,8 @@ def run_one_baseline(
 ) -> dict[str, Any]:
     """Run one baseline over all cases, grouped by fault_type.
 
-    Returns {fault_type: {"n_cases": int, "avg_at_5": float, "errors": int}}.
+    Returns {fault_type: {"n_cases": int, "avg_at_5": float, "mrr": float,
+    "lift_at_5": float, "errors": int}}.
     A baseline raising (e.g. B2 without RCAEval installed, B4 without an
     LLM provider raising instead of degrading) is caught per-case so one
     bad case doesn't abort the whole run; the case is excluded from that
@@ -113,11 +122,13 @@ def run_one_baseline(
     rank_fn = _load_baseline_rank_fn(baseline_id)
 
     per_fault: dict[str, list[tuple[list[str], str]]] = {}
+    per_fault_n: dict[str, list[int]] = {}
     error_counts: dict[str, int] = {}
 
     for case, ground_truth in cases:
         fault_type = ground_truth.fault_type
         per_fault.setdefault(fault_type, [])
+        per_fault_n.setdefault(fault_type, [])
         error_counts.setdefault(fault_type, 0)
         try:
             ranks = rank_fn(case, inject_time=ground_truth.inject_time)
@@ -125,12 +136,17 @@ def run_one_baseline(
             error_counts[fault_type] += 1
             continue
         per_fault[fault_type].append((ranks, ground_truth.root_cause_service))
+        per_fault_n[fault_type].append(_n_candidates(case))
 
     results: dict[str, Any] = {}
     for fault_type, ranked_answers in per_fault.items():
         results[fault_type] = {
             "n_cases": len(ranked_answers),
             "avg_at_5": average_at_k(ranked_answers, k=5) if ranked_answers else None,
+            "mrr": mean_reciprocal_rank(ranked_answers) if ranked_answers else None,
+            "lift_at_5": (
+                lift_at_k(ranked_answers, 5, per_fault_n[fault_type]) if ranked_answers else None
+            ),
             "errors": error_counts[fault_type],
         }
     return results
@@ -189,6 +205,8 @@ def run_benchmark(config: dict[str, Any]) -> Path:
                         "fault_type": fault_type,
                         "n_cases": stats["n_cases"],
                         "avg_at_5": stats["avg_at_5"],
+                        "mrr": stats["mrr"],
+                        "lift_at_5": stats["lift_at_5"],
                         "errors": stats["errors"],
                     }
                 )
@@ -213,7 +231,7 @@ def _write_metrics_csv(path: Path, rows: list[dict[str, Any]]) -> None:
 
     fieldnames = [
         "run_id", "repeat_index", "system_variant", "baseline",
-        "fault_type", "n_cases", "avg_at_5", "errors",
+        "fault_type", "n_cases", "avg_at_5", "mrr", "lift_at_5", "errors",
     ]
     with path.open("w", newline="") as fh:
         writer = csv.DictWriter(fh, fieldnames=fieldnames)

@@ -7,6 +7,11 @@ uses [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- `mean_reciprocal_rank` and `lift_at_k` in `rcaground.bench.metrics`; the
+  benchmark harness records each case's candidate-service count and writes
+  `mrr` and `lift_at_5` columns to `metrics.csv` beside `avg_at_5`. Both
+  definitions, including the ratio-of-means choice and how N is defined, are
+  in `docs/protocol.md`.
 - `OpenRCAAdapter(root, system="Bank")` with a per-system `LAYOUTS` table
   (timezone and telemetry file layout). Only Bank is verified; other systems
   raise `NotImplementedError` until verified against real files. Bank case IDs
