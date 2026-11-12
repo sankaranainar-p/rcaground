@@ -96,7 +96,6 @@ from __future__ import annotations
 
 import math
 import warnings
-from bisect import bisect_left, bisect_right
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator, Optional

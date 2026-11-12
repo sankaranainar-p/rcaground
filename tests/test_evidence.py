@@ -6,7 +6,6 @@ ranked, that IDs are in stable format, that the pack is capped at 40 items,
 and that ground-truth service appears in top-5 on fixture cases.
 """
 
-import pytest
 import networkx as nx
 
 from rcaground.agents.evidence import (

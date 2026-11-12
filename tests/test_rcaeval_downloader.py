@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
-import sys
 import zipfile
 from pathlib import Path
 from unittest.mock import patch

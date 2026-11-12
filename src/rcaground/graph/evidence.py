@@ -7,7 +7,6 @@ propagation paths, and impact zones.
 
 from __future__ import annotations
 
-from typing import Optional
 
 import networkx as nx
 

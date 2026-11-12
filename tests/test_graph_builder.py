@@ -5,7 +5,6 @@ Fixture cases verify known edges with correct call counts, error ratios,
 and p99 latencies. Graphviz export and path-finding helpers are tested.
 """
 
-from pathlib import Path
 
 import pytest
 
