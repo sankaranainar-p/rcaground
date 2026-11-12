@@ -30,7 +30,7 @@ import networkx as nx
 import pytest
 
 from rcaground.signals.openrca import LAYOUTS, OpenRCAAdapter, OpenRCABankAdapter, evidence_window
-from rcaground.signals.types import FailureCase, GroundTruth, LogEvent, MetricSeries, Span
+from rcaground.signals.types import FailureCase, GroundTruth, LogEvent, Span
 
 FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "openrca_bank"
 GOLDEN = Path(__file__).parent / "fixtures" / "openrca_bank_golden.json"

@@ -21,7 +21,7 @@ import networkx as nx
 import numpy as np
 
 from rcaground.signals.alert_synth import Alert
-from rcaground.signals.types import FailureCase, LogEvent, Span
+from rcaground.signals.types import FailureCase, Span
 
 
 @dataclass(frozen=True)
