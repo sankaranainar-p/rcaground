@@ -13,6 +13,7 @@ import pytest
 import yaml
 
 from rcaground.bench.run_benchmark import (
+    _n_candidates,
     load_config,
     run_benchmark,
     run_one_baseline,
@@ -73,6 +74,15 @@ def test_run_one_baseline_b1_on_re1_ob_fixture():
     assert results["cpu"]["n_cases"] == 1
     assert results["cpu"]["errors"] == 0
     assert 0.0 <= results["cpu"]["avg_at_5"] <= 1.0
+    assert 0.0 <= results["cpu"]["mrr"] <= 1.0
+    assert results["cpu"]["lift_at_5"] >= 0.0
+
+
+def test_n_candidates_counts_services_across_telemetry_and_topology():
+    case, _ = next(iter(RCAEvalAdapter(FIXTURE_ROOT, "RE1-OB")))
+    services = {k.split(":", 1)[0] for k in case.metrics} | set(case.topology.nodes)
+    services |= {e.service for e in case.logs} | {s.service for s in case.traces}
+    assert _n_candidates(case) == len(services) >= 1
 
 
 def test_run_one_baseline_unknown_raises():
@@ -105,7 +115,7 @@ def test_run_benchmark_writes_manifest_and_metrics(tmp_path):
     assert "duration_seconds" in manifest
 
     metrics_text = metrics_path.read_text()
-    assert "run_id,repeat_index,system_variant,baseline,fault_type,n_cases,avg_at_5,errors" in metrics_text
+    assert "run_id,repeat_index,system_variant,baseline,fault_type,n_cases,avg_at_5,mrr,lift_at_5,errors" in metrics_text
     assert "test_run" in metrics_text
     assert "B1" in metrics_text
 

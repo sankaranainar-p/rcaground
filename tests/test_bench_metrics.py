@@ -8,6 +8,8 @@ from __future__ import annotations
 import math
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
 from rcaground.bench.metrics import (
     accuracy_at_k,
@@ -15,7 +17,9 @@ from rcaground.bench.metrics import (
     brier_score,
     expected_calibration_error,
     faithfulness,
+    lift_at_k,
     macro_f1,
+    mean_reciprocal_rank,
 )
 
 

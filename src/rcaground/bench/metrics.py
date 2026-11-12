@@ -11,6 +11,8 @@ Implemented metrics:
                                ground-truth answer is within the top-k ranks
     average_at_k (Avg@5)     — mean of AC@1..AC@k, matching RCAEval's
                                Evaluator.average(k) exactly
+    mean_reciprocal_rank     — mean of 1/rank of the answer, 0 when absent
+    lift_at_k                — AC@k divided by the mean per-case chance rate
     faithfulness             — fraction of an explanation's cited evidence
                                keys that are actually present in the case's
                                observed signals (a simple groundedness check,
@@ -146,6 +148,44 @@ def average_at_k(ranked_answers: Sequence[Sequence[Any]], k: int) -> float:
     if k < 1:
         raise ValueError("k must be >= 1")
     return sum(accuracy_at_k(ranked_answers, i) for i in range(1, k + 1)) / k
+
+
+def mean_reciprocal_rank(ranked_answers: Sequence[Sequence[Any]]) -> float:
+    """MRR = mean over cases of 1/rank of the answer, 0 if it is not in ranks.
+
+    Same input as accuracy_at_k. Rank is 1-based; if the answer appears more
+    than once in `ranks`, its first position counts.
+    """
+    if not ranked_answers:
+        raise ValueError("ranked_answers must not be empty")
+
+    total = 0.0
+    for ranks, answer in ranked_answers:
+        ranks = list(ranks)
+        if answer in ranks:
+            total += 1.0 / (ranks.index(answer) + 1)
+    return total / len(ranked_answers)
+
+
+def lift_at_k(
+    ranked_answers: Sequence[Sequence[Any]],
+    k: int,
+    n_candidates: Sequence[int],
+) -> float:
+    """Lift@k = AC@k / mean_i(min(k, N_i) / N_i).
+
+    A ratio of means, not a mean of per-case ratios. `n_candidates[i]` is N_i,
+    the number of candidate services in case i (independent of the length of
+    the method's ranking). A value of 1.0 is the level of a uniformly random
+    ranking.
+    """
+    if len(ranked_answers) != len(n_candidates):
+        raise ValueError(f"length mismatch: {len(ranked_answers)} vs {len(n_candidates)}")
+    if any(n < 1 for n in n_candidates):
+        raise ValueError("every n_candidates entry must be >= 1")
+
+    chance = sum(min(k, n) / n for n in n_candidates) / len(n_candidates) if n_candidates else 0.0
+    return accuracy_at_k(ranked_answers, k) / chance
 
 
 # ---------------------------------------------------------------------------
