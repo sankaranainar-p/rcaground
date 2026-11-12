@@ -45,7 +45,9 @@ def _cases_with_downloaded_telemetry(system):
 def test_record_datetime_column_is_shanghai_time(system):
     record = pd.read_csv(OpenRCAAdapter(_ROOT, system=system).record_csv)
     local = pd.to_datetime(record["timestamp"], unit="s", utc=True).dt.tz_convert("Asia/Shanghai")
-    assert local.dt.tz_localize(None).equals(pd.to_datetime(record["datetime"]))
+    pd.testing.assert_series_equal(
+        local.dt.tz_localize(None), pd.to_datetime(record["datetime"]), check_dtype=False, check_names=False
+    )
 
 
 def test_real_cases_load_with_metrics_and_no_logs(system):

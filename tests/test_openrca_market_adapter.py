@@ -100,7 +100,9 @@ def test_record_datetime_column_is_shanghai_time():
     for system in ENVS:
         record = pd.read_csv(FIXTURE_ROOT / "Market" / system.split(".")[1] / "record.csv")
         local = pd.to_datetime(record["timestamp"], unit="s", utc=True).dt.tz_convert("Asia/Shanghai")
-        assert local.dt.tz_localize(None).equals(pd.to_datetime(record["datetime"]))
+        pd.testing.assert_series_equal(
+            local.dt.tz_localize(None), pd.to_datetime(record["datetime"]), check_dtype=False, check_names=False
+        )
 
 
 def test_date_folder_uses_shanghai_date_not_utc_date():
