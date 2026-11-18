@@ -32,6 +32,8 @@ class Claim(BaseModel):
     text: str  # The claim itself
     evidence_ids: list[str] = Field(min_length=1)  # At least one evidence ID
     confidence: float = Field(ge=0.0, le=1.0)  # Confidence in [0, 1]
+    # (source_service, target_service): the claim says a fault propagated source -> target
+    causal_edges: list[tuple[str, str]] = Field(default_factory=list)
 
     @field_validator("evidence_ids")
     def validate_evidence_ids(cls, v):
@@ -92,6 +94,35 @@ Reply with ONLY a JSON object:
 }}
 Produce 3-6 claims. Each claim's evidence_ids must be a non-empty subset of the IDs above."""
 
+_RCA_PROMPT_EDGES = """CASE: {case_id}
+ALERT: {alert}
+
+EVIDENCE (ranked; cite these IDs verbatim):
+{evidence}
+
+Reply with ONLY a JSON object:
+{{
+  "root_cause_service": "<service name>",
+  "probable_cause": "<one sentence>",
+  "contributing_factors": ["<factor>", ...],
+  "claims": [
+    {{"text": "<claim>", "evidence_ids": ["<id from the list>", ...], "confidence": <0.0-1.0>,
+      "causal_edges": [["<source service>", "<target service>"], ...]}}
+  ]
+}}
+Produce 3-6 claims. Each claim's evidence_ids must be a non-empty subset of the IDs above.
+causal_edges lists each fault propagation the claim asserts, as [source, target] service pairs meaning the fault spread from source to target; use [] if the claim asserts none."""
+
+
+def _parse_edges(raw) -> list[tuple[str, str]]:
+    """Keep only well-formed [source, target] string pairs; drop the rest."""
+    if not isinstance(raw, list):
+        return []
+    return [
+        (e[0], e[1]) for e in raw
+        if isinstance(e, (list, tuple)) and len(e) == 2 and all(isinstance(x, str) and x for x in e)
+    ]
+
 
 def _extract_json_object(text: str) -> dict:
     """Parse the first {...} object out of an LLM reply, tolerating code fences."""
@@ -120,8 +151,9 @@ def _service_of(eid: str) -> Optional[str]:
 class RCAAgent:
     """Generates RCA with evidence-grounded claims."""
 
-    def __init__(self, evidence_pack: EvidencePack):
+    def __init__(self, evidence_pack: EvidencePack, request_edges: bool = False):
         self.evidence_pack = evidence_pack
+        self.request_edges = request_edges
         self.valid_evidence_ids = {item.id for item in evidence_pack.items}
         self.pack_services = {
             it.service for it in evidence_pack.items
@@ -150,7 +182,7 @@ class RCAAgent:
         rendered = "\n".join(
             f"- {it.id}  (score {it.score:.2f}, {it.service}): {it.description}" for it in items
         )
-        prompt = _RCA_PROMPT.format(
+        prompt = (_RCA_PROMPT_EDGES if self.request_edges else _RCA_PROMPT).format(
             case_id=self.evidence_pack.case_id,
             alert=alert_text or "[silent alert]",
             evidence=rendered,
@@ -181,6 +213,7 @@ class RCAAgent:
                         text=str(raw["text"]),
                         evidence_ids=list(raw["evidence_ids"]),
                         confidence=float(raw.get("confidence", 0.5)),
+                        causal_edges=_parse_edges(raw.get("causal_edges", [])),
                     )
                 )
             except (KeyError, TypeError, ValueError, ValidationError):

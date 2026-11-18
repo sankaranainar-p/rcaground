@@ -7,6 +7,12 @@ uses [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- `Claim.causal_edges` (optional, default empty), an opt-in
+  `RCAAgent(..., request_edges=True)` prompt that asks for them (the default
+  prompt is byte-identical, pinned by a hash test), and
+  `rcaground.bench.dependency` with `classify_edge` and
+  `hallucinated_dependency_rate` (HDR). The definition, the four edge classes
+  and the limits of the check are in `docs/protocol.md`.
 - `mean_reciprocal_rank` and `lift_at_k` in `rcaground.bench.metrics`; the
   benchmark harness records each case's candidate-service count and writes
   `mrr` and `lift_at_5` columns to `metrics.csv` beside `avg_at_5`. Both
