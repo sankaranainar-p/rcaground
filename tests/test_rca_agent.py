@@ -329,3 +329,46 @@ def test_headline_needs_review_when_all_claims_dropped():
                               allowed_ids={"kpi:checkoutservice:latency-50"})
     assert res.claims == [] and res.dropped_claims == 1
     assert res.root_cause_service == "needs_review" and res.root_cause_verified is False
+
+
+def test_default_prompt_is_byte_identical():
+    import hashlib
+    from rcaground.agents.rca import _RCA_PROMPT, _RCA_SYSTEM
+
+    digest = hashlib.sha256((_RCA_SYSTEM + "\n" + _RCA_PROMPT).encode()).hexdigest()
+    assert digest == "828906f640c3aca514d8deb523d678b8af1e070fa4448889b36b7b236d55e180"
+
+
+def test_claim_causal_edges_default_empty():
+    assert Claim(text="x", evidence_ids=["a"], confidence=0.5).causal_edges == []
+
+
+class _FakeClient:
+    def __init__(self, text):
+        self.text, self.prompts = text, []
+
+    def call(self, prompt, **kw):
+        from rcaground.llm.client import LLMResponse
+        self.prompts.append(prompt)
+        return LLMResponse(text=self.text, model_digest="fake", cached=False, tokens_used=1)
+
+
+_EDGE_REPLY = (
+    '{"root_cause_service": "checkoutservice", "probable_cause": "p", "claims": ['
+    '{"text": "checkoutservice latency", "evidence_ids": ["kpi:checkoutservice:latency-50"],'
+    ' "confidence": 0.9, "causal_edges": [["checkoutservice", "frontend"], ["bad"], [1, 2], "x"]}]}'
+)
+
+
+def test_generate_parses_edges_and_drops_malformed():
+    agent = RCAAgent(_delay_pack(), request_edges=True)
+    client = _FakeClient(_EDGE_REPLY)
+    res = agent.generate("alert", client)
+    assert "causal_edges" in client.prompts[0]
+    assert res.claims[0].causal_edges == [("checkoutservice", "frontend")]
+
+
+def test_default_generate_does_not_request_edges():
+    client = _FakeClient(_EDGE_REPLY)
+    RCAAgent(_delay_pack()).generate("alert", client)
+    assert "causal_edges" not in client.prompts[0]
