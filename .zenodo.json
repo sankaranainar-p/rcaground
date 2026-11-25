@@ -1,0 +1,20 @@
+{
+  "title": "rcaground: Reproducible evaluation of evidence grounding in LLM-generated root cause analysis",
+  "description": "Reproducible evaluation of evidence grounding in LLM-generated root cause analysis for microservice systems. Provides normalised adapters for public RCA benchmarks (RCAEval, OpenRCA), deterministic evidence ranking, two-stage claim-level faithfulness checking, and a benchmark harness with run manifests and human-rating calibration.",
+  "upload_type": "software",
+  "creators": [
+    {
+      "name": "Paramasivan, Sankaranainar",
+      "orcid": "0009-0006-1738-3863"
+    }
+  ],
+  "license": "Apache-2.0",
+  "keywords": [
+    "root cause analysis",
+    "AIOps",
+    "large language models",
+    "faithfulness",
+    "evaluation",
+    "microservices"
+  ]
+}

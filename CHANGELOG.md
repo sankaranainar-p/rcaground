@@ -6,6 +6,8 @@ uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-11-25
+
 ### Added
 - `Claim.causal_edges` (optional, default empty), an opt-in
   `RCAAgent(..., request_edges=True)` prompt that asks for them (the default

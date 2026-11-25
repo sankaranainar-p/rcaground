@@ -1,5 +1,10 @@
 # rcaground
 
+[![PyPI version](https://img.shields.io/pypi/v/rcaground.svg)](https://pypi.org/project/rcaground/)
+[![CI](https://github.com/sankaranainar-p/rcaground/actions/workflows/ci.yml/badge.svg)](https://github.com/sankaranainar-p/rcaground/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+<!-- TODO: add Zenodo DOI badge once the first release (v0.1.0) mints it -->
+
 **Reproducible evaluation of evidence grounding in LLM-generated root cause analysis.**
 
 When a large language model explains why a microservice system failed, two
