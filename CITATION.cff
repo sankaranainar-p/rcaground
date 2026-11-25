@@ -8,7 +8,8 @@ authors:
     orcid: "https://orcid.org/0009-0006-1738-3863"
 repository-code: "https://github.com/sankaranainar-p/rcaground"
 license: Apache-2.0
-version: 0.1.0.dev0
+version: 0.1.0
+date-released: 2026-11-25
 keywords:
   - root cause analysis
   - AIOps
